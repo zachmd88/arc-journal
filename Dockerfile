@@ -12,6 +12,15 @@ RUN npm install
 # Copy source code
 COPY . .
 
+# Provide mock variables for Next.js build-time static generation
+# The real values will be provided at runtime by Cloud Run Secrets
+ENV NEXT_PUBLIC_FIREBASE_API_KEY=mock-key-for-build
+ENV NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=mock-domain
+ENV NEXT_PUBLIC_FIREBASE_PROJECT_ID=mock-project
+ENV NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=mock-bucket
+ENV NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=mock-sender
+ENV NEXT_PUBLIC_FIREBASE_APP_ID=mock-app-id
+
 # Build the App
 RUN npm run build
 

@@ -6,7 +6,6 @@ import { getLatestWeekCard, WeekCard, getRecentDocuments, Round, Session } from 
 import Link from "next/link";
 import Image from "next/image";
 import ProgressSummary from "@/components/ProgressSummary";
-import VirtualCoachSync from "@/components/VirtualCoachSync";
 import SinglePlaneAnalytics from "@/components/SinglePlaneAnalytics";
 
 export default function Home() {
@@ -42,26 +41,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-zinc-950 pb-12 font-sans text-zinc-100">
 
-      {/* Navigation */}
-      <nav className="bg-zinc-900 border-b border-zinc-800">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 justify-between">
-            <div className="flex items-center">
-              <span className="text-2xl font-bold tracking-tight text-zinc-100">Arc Journal</span>
-            </div>
-            <div className="flex items-center space-x-6">
-              <Link href="/log/round" className="text-sm font-medium text-zinc-400 hover:text-indigo-400 transition-colors">Log Round</Link>
-              <Link href="/log/session" className="text-sm font-medium text-zinc-400 hover:text-indigo-400 transition-colors">Log Session</Link>
-              <Link href="/week" className="text-sm font-medium text-zinc-400 hover:text-indigo-400 transition-colors">Weekly Plan</Link>
-              <Link href="/resources" className="text-sm font-medium text-zinc-400 hover:text-indigo-400 transition-colors">Resources</Link>
-              <div className="ml-4 flex items-center">
-                {user?.photoURL && <Image className="rounded-full border border-zinc-700" src={user.photoURL} alt="" width={36} height={36} />}
-              </div>
-            </div>
-          </div>
-        </div>
-      </nav>
-
       <main className="py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 
@@ -76,9 +55,6 @@ export default function Home() {
 
           {/* Progress Summary Module */}
           <ProgressSummary rounds={rounds} sessions={sessions} />
-
-          {/* Virtual Coach Sync - Centralized tool */}
-          <VirtualCoachSync sessions={sessions} rounds={rounds} />
 
           {/* Active Plan Card */}
           <div className="mb-10">

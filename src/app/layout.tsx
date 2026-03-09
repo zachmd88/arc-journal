@@ -13,6 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 import { AuthProvider } from "@/context/AuthContext";
+import NavBar from "@/components/NavBar";
 
 export const metadata: Metadata = {
   title: "Arc Journal",
@@ -29,7 +30,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <NavBar />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

@@ -58,6 +58,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             await signInWithPopup(auth, provider);
         } catch (error) {
             console.error("Error signing in with Google", error);
+            throw error; // Re-throw so the Login page can catch it and reset the spinner
         }
     };
 

@@ -90,12 +90,12 @@ export function generateWeekPlan(inputs: RuleInputs): RuleOutput {
         if (round.teeMissStart === 'R' || round.teeMissCurve === 'R') patterns.slice += weight;
         if (round.teeMissStart === 'L' || round.teeMissCurve === 'L') patterns.hook += weight;
 
-        // Analyze Approach
-        if (round.approach60_150.contact === 'fat') patterns.fat += weight;
-        if (round.approach60_150.contact === 'thin') patterns.thin += weight;
-        if (round.approach60_150.missSide === 'L') patterns.approachMissL += weight;
-        if (round.approach60_150.missSide === 'R') patterns.approachMissR += weight;
-        if (round.approach60_150.missSide === 'S') patterns.approachMissS += weight;
+        // Analyze Approach (Deprecated, safeguarded for legacy data)
+        if (round.approach60_150?.contact === 'fat') patterns.fat += weight;
+        if (round.approach60_150?.contact === 'thin') patterns.thin += weight;
+        if (round.approach60_150?.missSide === 'L') patterns.approachMissL += weight;
+        if (round.approach60_150?.missSide === 'R') patterns.approachMissR += weight;
+        if (round.approach60_150?.missSide === 'S') patterns.approachMissS += weight;
     });
 
     // 3. DECISION LOGIC
@@ -176,7 +176,7 @@ export function createWeekCardFromHistory(
         ],
         metricsSnapshot: {
             lastRoundPenalties: lastRound ? lastRound.penaltiesCount : 0,
-            gir60_150: lastRound ? lastRound.approach60_150.greensHit : 0
+            gir60_150: lastRound ? (lastRound.approach60_150?.greensHit || 0) : 0
         },
         generatedSummary: rules.whyReasoning, // This now holds the "Why"
         createdAt: Timestamp.now()

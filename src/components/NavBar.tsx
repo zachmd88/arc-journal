@@ -16,7 +16,6 @@ export default function NavBar() {
         { name: "Log Round", href: "/log/round" },
         { name: "Log Session", href: "/log/session" },
         { name: "AI Coach", href: "/coach" },
-        { name: "Weekly Plan", href: "/week" },
         { name: "Resources", href: "/resources" }
     ];
 

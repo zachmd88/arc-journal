@@ -119,6 +119,10 @@ export interface Resource {
     summary?: string;
     tags?: string[];
     status: "idea" | "experiment" | "approved";
+    resourceType?: "youtube video" | "article" | "blog post" | "email" | "tweet" | "photo/screenshot" | "website" | "other";
+    date?: string; // YYYY-MM-DD
+    addedToNotebookLm?: boolean;
+    attachmentUrl?: string;
     createdAt: Timestamp;
 }
 

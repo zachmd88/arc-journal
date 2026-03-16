@@ -3,7 +3,7 @@
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
 import { addDocument, Session, uploadAttachment, getRecentDocuments, updateDocument, deleteDocument } from "@/lib/firestore-utils";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import SinglePlaneTrackerForm, { SinglePlaneMetrics } from "@/components/SinglePlaneTrackerForm";
@@ -11,12 +11,18 @@ import SinglePlaneTrackerForm, { SinglePlaneMetrics } from "@/components/SingleP
 export default function LogSessionPage() {
     const { user } = useAuth();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [loading, setLoading] = useState(false);
     
     const initialFormState = {
         date: new Date().toISOString().split('T')[0],
         type: "range",
+        primaryFocus: "",
+        sessionRating: 3,
+        primaryMissDirection: "None",
         rawNotes: "",
+        feels: "",
+        feelId: "",
         singlePlaneMetrics: {
             strikeQuality: 0,
             startLineControl: 0,
@@ -43,6 +49,17 @@ export default function LogSessionPage() {
         fetchHistory();
     }, [user]);
 
+    // Handle Edit from URL
+    useEffect(() => {
+        const editId = searchParams.get('edit');
+        if (editId && history.length > 0) {
+            const sessionToEdit = history.find(s => s.id === editId);
+            if (sessionToEdit && !editModeId) {
+                handleEdit(sessionToEdit);
+            }
+        }
+    }, [searchParams, history, editModeId]);
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
             setFiles(Array.from(e.target.files));
@@ -66,7 +83,11 @@ export default function LogSessionPage() {
                 ownerUid: user.uid,
                 date: formData.date,
                 type: formData.type as "range" | "practice",
+                primaryFocus: formData.primaryFocus,
+                sessionRating: Number(formData.sessionRating),
+                primaryMissDirection: formData.primaryMissDirection,
                 rawNotes: formData.rawNotes,
+                feels: formData.feels,
             };
 
             const hasMetrics = Object.values(formData.singlePlaneMetrics).some(val => typeof val === 'number' && val > 0);
@@ -87,10 +108,28 @@ export default function LogSessionPage() {
             }
 
             if (editModeId) {
+                // Handle feels updates first
+                if (formData.feels) {
+                    if (formData.feelId) {
+                        await updateDocument("feels", formData.feelId, { text: formData.feels, date: formData.date });
+                        sessionData.feelId = formData.feelId;
+                    } else {
+                        const newFeelId = await addDocument("feels", { ownerUid: user.uid, date: formData.date, text: formData.feels, source: "session", tags: [formData.type || "range"], sourceId: editModeId });
+                        sessionData.feelId = newFeelId;
+                    }
+                } else if (formData.feelId) {
+                    await deleteDocument("feels", formData.feelId);
+                    sessionData.feelId = "";
+                }
+                
                 await updateDocument("sessions", editModeId, sessionData);
             } else {
                 sessionData.tags = [];
-                await addDocument<Omit<Session, "id" | "createdAt" | "attachments">>("sessions", sessionData as any);
+                const newSessionId = await addDocument<Omit<Session, "id" | "createdAt" | "attachments">>("sessions", sessionData as any);
+                if (sessionData.feels) {
+                    const newFeelId = await addDocument("feels", { ownerUid: user.uid, date: sessionData.date, text: sessionData.feels, source: "session", tags: [sessionData.type || "range"], sourceId: newSessionId });
+                    await updateDocument("sessions", newSessionId, { feelId: newFeelId });
+                }
             }
             
             router.push("/");
@@ -106,7 +145,12 @@ export default function LogSessionPage() {
         setFormData({
             date: session.date,
             type: session.type,
+            primaryFocus: session.primaryFocus || "",
+            sessionRating: session.sessionRating || 3,
+            primaryMissDirection: session.primaryMissDirection || "None",
             rawNotes: session.rawNotes || "",
+            feels: session.feels || "",
+            feelId: session.feelId || "",
             singlePlaneMetrics: session.singlePlaneMetrics || initialFormState.singlePlaneMetrics
         });
         setEditModeId(session.id || null);
@@ -118,6 +162,10 @@ export default function LogSessionPage() {
         if (!confirm("Are you sure you want to delete this session? This cannot be undone.")) return;
         
         try {
+            const sessionToDelete = history.find(s => s.id === id);
+            if (sessionToDelete?.feelId) {
+                await deleteDocument("feels", sessionToDelete.feelId);
+            }
             await deleteDocument("sessions", id);
             setHistory(prev => prev.filter(s => s.id !== id));
             if (editModeId === id) {
@@ -184,16 +232,77 @@ export default function LogSessionPage() {
                         </div>
                     </div>
 
+                    {/* Session Details */}
+                    <div className="border-t border-zinc-800 pt-6">
+                        <h3 className="text-lg font-bold text-zinc-100 mb-4 flex items-center gap-2">
+                            <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                            Session Details
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-sm font-semibold text-zinc-300 mb-2">Primary Focus</label>
+                                <input
+                                    type="text"
+                                    placeholder="e.g. Driver start line, Wedge distance control"
+                                    className="block w-full rounded-md border-none bg-zinc-950 py-3 px-4 text-zinc-100 shadow-inner focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow placeholder:text-zinc-600"
+                                    value={formData.primaryFocus}
+                                    onChange={(e) => setFormData({ ...formData, primaryFocus: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-zinc-300 mb-2">Session Rating (1-5)</label>
+                                <select 
+                                    className="block w-full rounded-md border-none bg-zinc-950 py-3 px-4 text-zinc-100 shadow-inner focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow"
+                                    value={formData.sessionRating}
+                                    onChange={(e) => setFormData({ ...formData, sessionRating: parseInt(e.target.value) || 3 })}
+                                >
+                                    <option value="1">1 - Poor</option>
+                                    <option value="2">2 - Fair</option>
+                                    <option value="3">3 - Good</option>
+                                    <option value="4">4 - Very Good</option>
+                                    <option value="5">5 - Excellent</option>
+                                </select>
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label className="block text-sm font-semibold text-zinc-300 mb-2">Primary Miss Direction Observed</label>
+                                <select 
+                                    className="block w-full rounded-md border-none bg-zinc-950 py-3 px-4 text-zinc-100 shadow-inner focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow"
+                                    value={formData.primaryMissDirection}
+                                    onChange={(e) => setFormData({ ...formData, primaryMissDirection: e.target.value })}
+                                >
+                                    <option value="None">None / Not Sure</option>
+                                    <option value="Pull Hook">Pull Hook</option>
+                                    <option value="Block Right">Block Right</option>
+                                    <option value="Fat/Chunk">Fat/Chunk</option>
+                                    <option value="Thin/Bladed">Thin/Bladed</option>
+                                    <option value="Slice">Slice</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     <div>
-                        <label className="block text-sm font-semibold text-zinc-300 mb-2">Notes & Feels</label>
+                        <label className="block text-sm font-semibold text-zinc-300 mb-2">Notes</label>
                         <textarea
-                            rows={6}
+                            rows={4}
                             required
                             title="Notes"
                             className="block w-full rounded-md border-none bg-zinc-950 py-3 px-4 text-zinc-100 shadow-inner placeholder:text-zinc-600 focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow"
-                            placeholder="What did you work on? What were the key feels or breakthroughs?"
+                            placeholder="What did you work on? What were the key drills or thoughts?"
                             value={formData.rawNotes}
                             onChange={(e) => setFormData({ ...formData, rawNotes: e.target.value })}
+                        />
+                    </div>
+                    
+                    <div>
+                        <label className="block text-sm font-semibold text-zinc-300 mb-2">Current Feels that are working</label>
+                        <textarea
+                            rows={3}
+                            title="Current Feels"
+                            className="block w-full rounded-md border-none bg-zinc-950 py-3 px-4 text-zinc-100 shadow-inner placeholder:text-zinc-600 focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow"
+                            placeholder="Any swing thoughts or feels that were working well today?"
+                            value={formData.feels}
+                            onChange={(e) => setFormData({ ...formData, feels: e.target.value })}
                         />
                     </div>
 
@@ -202,7 +311,7 @@ export default function LogSessionPage() {
                         <summary className="px-5 py-4 font-bold text-zinc-100 cursor-pointer flex justify-between items-center hover:bg-zinc-900/50 transition-colors">
                             <div className="flex items-center gap-2">
                                 <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                                Single Plane Progress Tracker
+                                Training Progress Tracker
                             </div>
                             <svg className="w-5 h-5 text-zinc-500 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                         </summary>
@@ -313,6 +422,16 @@ export default function LogSessionPage() {
                                                     <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{session.rawNotes}</p>
                                                 </div>
                                                 
+                                                {session.feels && (
+                                                    <div className="mb-4">
+                                                        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 flex items-center gap-2">
+                                                            <svg className="w-3 h-3 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                                            Current Feels
+                                                        </p>
+                                                        <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap bg-indigo-950/20 p-3 rounded-md border border-indigo-900/30">{session.feels}</p>
+                                                    </div>
+                                                )}
+                                                
                                                 {session.attachments && session.attachments.length > 0 && (
                                                     <div>
                                                         <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Attachments</p>
@@ -335,6 +454,15 @@ export default function LogSessionPage() {
                                                         <p className="text-sm text-indigo-200">{session.coachInsight.verdict}</p>
                                                     </div>
                                                 )}
+
+                                                <div className="mt-4">
+                                                    <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Session Stats</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <span className="text-xs px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">Rating: <span className="text-zinc-200">{session.sessionRating || "-"} / 5</span></span>
+                                                        <span className="text-xs px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">Focus: <span className="text-zinc-200">{session.primaryFocus || "-"}</span></span>
+                                                        <span className="text-xs px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">Primary Miss: <span className="text-zinc-200">{session.primaryMissDirection || "-"}</span></span>
+                                                    </div>
+                                                </div>
 
                                                 {/* Single Plane Tracker Mini Display for History */}
                                                 {session.singlePlaneMetrics && Object.values(session.singlePlaneMetrics).some(v => typeof v === 'number' && v > 0) && (

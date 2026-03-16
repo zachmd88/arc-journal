@@ -15,6 +15,7 @@ export default function NavBar() {
         { name: "Dashboard", href: "/" },
         { name: "Log Round", href: "/log/round" },
         { name: "Log Session", href: "/log/session" },
+        { name: "Current Feels", href: "/current-feels" },
         { name: "AI Coach", href: "/coach" },
         { name: "Resources", href: "/resources" }
     ];

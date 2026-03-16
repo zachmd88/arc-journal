@@ -2,17 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { getLatestWeekCard, WeekCard, getRecentDocuments, Round, Session } from "@/lib/firestore-utils";
+import { getLatestWeekCard, WeekCard, getRecentDocuments, Round, Session, deleteDocument } from "@/lib/firestore-utils";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
-import ProgressSummary from "@/components/ProgressSummary";
 import SinglePlaneAnalytics from "@/components/SinglePlaneAnalytics";
+import MetricCard from "@/components/MetricCard";
+import { Flag, Target, Crosshair, TrendingDown, Activity, PieChart } from "lucide-react";
 
 export default function Home() {
   const { user } = useAuth();
   const [weekCard, setWeekCard] = useState<WeekCard | null>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const router = useRouter();
 
   useEffect(() => {
     async function fetchData() {
@@ -30,6 +33,21 @@ export default function Home() {
     }
     fetchData();
   }, [user]);
+
+  const handleDeleteActivity = async (id: string, isRound: boolean) => {
+    if (!confirm("Are you sure you want to delete this activity?")) return;
+    try {
+      await deleteDocument(isRound ? "rounds" : "sessions", id);
+      if (isRound) {
+        setRounds(prev => prev.filter(r => r.id !== id));
+      } else {
+        setSessions(prev => prev.filter(s => s.id !== id));
+      }
+    } catch (error) {
+      console.error("Error deleting activity:", error);
+      alert("Failed to delete activity.");
+    }
+  };
 
   // Combine for analytics
   const allRecentActivities = [...rounds, ...sessions]
@@ -50,11 +68,135 @@ export default function Home() {
             <p className="mt-1 text-zinc-400">Track your progress and stick to the plan.</p>
           </div>
 
-          {/* Core Analytics Dashboard */}
-          <SinglePlaneAnalytics activities={allRecentActivities as any} />
+          {/* Full Game Metrics (Dashboard Part 2 Goal) */}
+          <div className="mb-10">
+            <h2 className="text-xl font-bold text-zinc-100 mb-4 flex items-center gap-2">
+                <Activity className="w-5 h-5 text-indigo-500" />
+                Full Game Metrics
+            </h2>
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {(() => {
+                  // Compute arrays trailing oldest to newest (for charts)
+                  const recentRoundsOldestFirst = [...rounds].reverse();
+                  
+                  // GIR Array
+                  const girData = recentRoundsOldestFirst
+                    .map(r => typeof r.gir === 'number' && typeof r.score === 'number' ? Math.round((r.gir / 18) * 100) : null)
+                    .filter(v => v !== null) as number[];
+                  
+                  const currentGir = girData.length > 0 ? girData[girData.length - 1] : 0;
+                  const prevGir = girData.length > 1 ? girData[girData.length - 2] : null;
+                  const girTrend = prevGir !== null ? `${currentGir >= prevGir ? '+' : ''}${currentGir - prevGir}%` : "--";
+                  const girDirection = prevGir === null ? 'neutral' : currentGir > prevGir ? 'up' : currentGir < prevGir ? 'down' : 'neutral';
 
-          {/* Progress Summary Module */}
-          <ProgressSummary rounds={rounds} sessions={sessions} />
+                  // Putts per GIR
+                  const puttsGirData = recentRoundsOldestFirst
+                    .map(r => r.puttsPerGir || null)
+                    .filter(v => v !== null) as number[];
+                  
+                  const currentPutts = puttsGirData.length > 0 ? puttsGirData[puttsGirData.length - 1] : 0;
+                  const prevPutts = puttsGirData.length > 1 ? puttsGirData[puttsGirData.length - 2] : null;
+                  const puttsTrend = prevPutts !== null ? `${currentPutts >= prevPutts ? '+' : ''}${(currentPutts - prevPutts).toFixed(1)}` : "--";
+                  const puttsDirection = prevPutts === null ? 'neutral' : currentPutts > prevPutts ? 'up' : currentPutts < prevPutts ? 'down' : 'neutral';
+
+                  // DB+
+                  const dbData = recentRoundsOldestFirst
+                    .map(r => typeof r.dbPlus === 'number' ? r.dbPlus : null)
+                    .filter(v => v !== null) as number[];
+                  
+                  const currentDb = dbData.length > 0 ? dbData[dbData.length - 1] : 0;
+                  const prevDb = dbData.length > 1 ? dbData[dbData.length - 2] : null;
+                  const dbTrend = prevDb !== null ? `${currentDb >= prevDb ? '+' : ''}${(currentDb - prevDb).toFixed(1)}` : "--";
+                  const dbDirection = prevDb === null ? 'neutral' : currentDb > prevDb ? 'up' : currentDb < prevDb ? 'down' : 'neutral';
+
+                  // Primary Miss
+                  const allMisses = [...rounds, ...sessions]
+                      .map(a => ('primaryMissDirection' in a ? a.primaryMissDirection : null))
+                      .filter(m => m && m !== "None");
+                  
+                  let missCounts: Record<string, number> = {};
+                  allMisses.forEach(m => { missCounts[m as string] = (missCounts[m as string] || 0) + 1; });
+                  
+                  let topMiss = "None";
+                  let topMissCount = 0;
+                  Object.entries(missCounts).forEach(([miss, count]) => {
+                      if (count > topMissCount) {
+                          topMissCount = count;
+                          topMiss = miss;
+                      }
+                  });
+
+                  // Execution (Score / Quality mapping for chart)
+                  const execData = [...sessions].reverse()
+                      .map(s => {
+                          if (!s.singlePlaneMetrics) return null;
+                          const sq = s.singlePlaneMetrics.strikeQuality || 0;
+                          const sl = s.singlePlaneMetrics.startLineControl || 0;
+                          if (sq === 0 && sl === 0) return null;
+                          // Average them out of 5, convert to %
+                          return Math.round(((sq + sl) / 10) * 100);
+                      })
+                      .filter(v => v !== null) as number[];
+                  
+                  const currentExec = execData.length > 0 ? execData[execData.length - 1] : 0;
+                  const prevExec = execData.length > 1 ? execData[execData.length - 2] : null;
+                  const execTrend = prevExec !== null ? `${currentExec >= prevExec ? '+' : ''}${currentExec - prevExec}%` : "--";
+                  const execDirection = prevExec === null ? 'neutral' : currentExec > prevExec ? 'up' : currentExec < prevExec ? 'down' : 'neutral';
+
+                  return (
+                      <>
+                          <MetricCard 
+                              title="Greens in Reg" 
+                              metric={currentGir > 0 ? `${currentGir}%` : "--"} 
+                              icon={<Flag className="w-5 h-5" />}
+                              trend={girTrend}
+                              trendDirection={girDirection}
+                              data={girData.length > 0 ? girData : []}
+                          />
+                          <MetricCard 
+                              title="Primary Miss" 
+                              metric={topMiss} 
+                              icon={<PieChart className="w-5 h-5" />}
+                              trend={`${topMissCount} recent`}
+                              trendDirection="neutral"
+                              data={[]}
+                          />
+                          <MetricCard 
+                              title="Putts per GIR" 
+                              metric={currentPutts > 0 ? currentPutts.toFixed(1) : "--"} 
+                              icon={<Crosshair className="w-5 h-5" />}
+                              trend={puttsTrend}
+                              trendDirection={puttsDirection}
+                              isGolfScore={true}
+                              data={puttsGirData.length > 0 ? puttsGirData : []}
+                          />
+                          <MetricCard 
+                              title="Double Bogeys+" 
+                              metric={currentDb > 0 ? currentDb : (dbData.length > 0 ? "0" : "--")} 
+                              icon={<TrendingDown className="w-5 h-5" />}
+                              trend={dbTrend}
+                              trendDirection={dbDirection}
+                              isGolfScore={true}
+                              data={dbData.length > 0 ? dbData : []}
+                          />
+                          <MetricCard 
+                              title="Target Execution" 
+                              metric={currentExec > 0 ? `${currentExec}%` : "--"} 
+                              icon={<Target className="w-5 h-5" />}
+                              trend={execTrend}
+                              trendDirection={execDirection}
+                              data={execData.length > 0 ? execData : []}
+                          />
+                      </>
+                  );
+              })()}
+            </div>
+          </div>
+
+          {/* Core Analytics Dashboard */}
+          <div className="mb-10">
+              <SinglePlaneAnalytics activities={allRecentActivities as any} />
+          </div>
 
           {/* Active Plan Card */}
           <div className="mb-10">
@@ -228,8 +370,22 @@ export default function Home() {
                               </span>
                             </p>
                           </div>
-                          <div className="whitespace-nowrap text-right text-sm text-zinc-500">
+                          <div className="whitespace-nowrap text-right text-sm text-zinc-500 flex flex-col items-end gap-2">
                             <time dateTime={item.date}>{item.date}</time>
+                            <div className="flex items-center gap-3">
+                              <button 
+                                onClick={() => router.push(`/${'penaltiesCount' in item ? 'log/round' : 'log/session'}?edit=${item.id}`)}
+                                className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
+                              >
+                                Edit
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteActivity(item.id!, 'penaltiesCount' in item)}
+                                className="text-xs font-medium text-red-400 hover:text-red-300 transition-colors"
+                              >
+                                Delete
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>

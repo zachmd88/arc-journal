@@ -10,7 +10,9 @@
     "demo": "playwright test e2e/demo.spec.ts"
   },
   "dependencies": {
+    "@tremor/react": "^3.18.7",
     "firebase": "^12.9.0",
+    "lucide-react": "^0.577.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",

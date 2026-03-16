@@ -109,8 +109,8 @@ export default function SinglePlaneAnalytics({ activities }: AnalyticsProps) {
                 <div className="flex justify-between items-end mb-6">
                     <div>
                         <h2 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
-                            <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                            Single Plane Progress Tracker
+                            <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002-2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                            Training Progress Tracker
                         </h2>
                         <p className="text-sm text-zinc-400 mt-1">Analytics based on your {validActivities.length} most recent logged metrics.</p>
                     </div>
@@ -124,6 +124,34 @@ export default function SinglePlaneAnalytics({ activities }: AnalyticsProps) {
                         </div>
                     )}
                 </div>
+
+                {/* Practice Frequency Banner */}
+                {(() => {
+                    const now = new Date();
+                    const twoWeeksAgo = new Date();
+                    twoWeeksAgo.setDate(now.getDate() - 14);
+                    
+                    const recentSessions = activities.filter(a => a.activityType === "session" && new Date(a.date) >= twoWeeksAgo);
+                    const sessionsPerWeek = (recentSessions.length / 2).toFixed(1);
+
+                    return (
+                        <div className="mb-6 bg-zinc-950/50 rounded-lg p-4 border border-zinc-800 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                                    <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-zinc-300">Practice Frequency</p>
+                                    <p className="text-xs text-zinc-500">Based on the last 14 days</p>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <span className="text-2xl font-bold text-emerald-400">{sessionsPerWeek}</span>
+                                <span className="text-sm text-zinc-400 ml-1">sessions / wk</span>
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* Dashboard Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">

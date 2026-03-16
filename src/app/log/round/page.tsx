@@ -3,7 +3,7 @@
 import { useAuth } from "@/context/AuthContext";
 import { useState, useEffect } from "react";
 import { addDocument, Round, uploadAttachment, getRecentDocuments, updateDocument, deleteDocument } from "@/lib/firestore-utils";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import SinglePlaneTrackerForm, { SinglePlaneMetrics } from "@/components/SinglePlaneTrackerForm";
@@ -11,6 +11,7 @@ import SinglePlaneTrackerForm, { SinglePlaneMetrics } from "@/components/SingleP
 export default function LogRoundPage() {
     const { user } = useAuth();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [loading, setLoading] = useState(false);
     
     // Form State
@@ -19,7 +20,14 @@ export default function LogRoundPage() {
         course: "",
         score: "",
         penaltiesCount: 0,
+        gir: "",
+        totalPutts: "",
+        puttsPerGir: "",
+        primaryMissDirection: "None",
+        dbPlus: 0,
         rawNotes: "",
+        currentFeels: "",
+        feelId: "",
         diagnosisTeeMiss: "",
         diagnosisMiss: "",
         diagnosisBestClub: "",
@@ -52,6 +60,17 @@ export default function LogRoundPage() {
         fetchHistory();
     }, [user]);
 
+    // Handle Edit from URL
+    useEffect(() => {
+        const editId = searchParams.get('edit');
+        if (editId && history.length > 0) {
+            const roundToEdit = history.find(r => r.id === editId);
+            if (roundToEdit && !editModeId) {
+                handleEdit(roundToEdit);
+            }
+        }
+    }, [searchParams, history, editModeId]);
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
             setFiles(Array.from(e.target.files));
@@ -77,7 +96,13 @@ export default function LogRoundPage() {
                 course: formData.course,
                 score: formData.score ? parseInt(formData.score as string) : undefined,
                 penaltiesCount: Number(formData.penaltiesCount),
+                gir: formData.gir ? parseInt(formData.gir as string) : undefined,
+                totalPutts: formData.totalPutts ? parseInt(formData.totalPutts as string) : undefined,
+                puttsPerGir: formData.puttsPerGir ? parseFloat(formData.puttsPerGir as string) : undefined,
+                primaryMissDirection: formData.primaryMissDirection,
+                dbPlus: Number(formData.dbPlus) || 0,
                 rawNotes: formData.rawNotes,
+                currentFeels: formData.currentFeels,
                 roundDiagnosis: {
                     teeMiss: formData.diagnosisTeeMiss,
                     dominantMiss: formData.diagnosisMiss,
@@ -102,9 +127,29 @@ export default function LogRoundPage() {
             }
 
             if (editModeId) {
+                // Handle feels updates first
+                if (formData.currentFeels) {
+                    if (formData.feelId) {
+                        await updateDocument("feels", formData.feelId, { text: formData.currentFeels, date: formData.date });
+                        roundData.feelId = formData.feelId;
+                    } else {
+                        const newFeelId = await addDocument("feels", { ownerUid: user.uid, date: formData.date, text: formData.currentFeels, source: "round", sourceId: editModeId });
+                        roundData.feelId = newFeelId;
+                    }
+                } else if (formData.feelId) {
+                    await deleteDocument("feels", formData.feelId);
+                    roundData.feelId = "";
+                }
+                
+                // Update round
                 await updateDocument("rounds", editModeId, roundData);
             } else {
-                await addDocument("rounds", roundData as any);
+                // New Round - add first to get ID
+                const newRoundId = await addDocument("rounds", roundData as any);
+                if (roundData.currentFeels) {
+                    const newFeelId = await addDocument("feels", { ownerUid: user.uid, date: roundData.date, text: roundData.currentFeels, source: "round", sourceId: newRoundId });
+                    await updateDocument("rounds", newRoundId, { feelId: newFeelId });
+                }
             }
 
             router.push("/");
@@ -122,11 +167,18 @@ export default function LogRoundPage() {
             course: round.course,
             score: round.score?.toString() || "",
             penaltiesCount: round.penaltiesCount || 0,
+            gir: round.gir?.toString() || "",
+            totalPutts: round.totalPutts?.toString() || "",
+            puttsPerGir: round.puttsPerGir?.toString() || "",
+            primaryMissDirection: round.primaryMissDirection || "None",
+            dbPlus: round.dbPlus || 0,
             rawNotes: round.rawNotes || "",
             diagnosisTeeMiss: round.roundDiagnosis?.teeMiss || (round.teeMissStart && round.teeMissCurve ? `${round.teeMissStart} Start, ${round.teeMissCurve} Curve` : ""),
             diagnosisMiss: round.roundDiagnosis?.dominantMiss || "",
             diagnosisBestClub: round.roundDiagnosis?.clubThatFeltBest || "",
             diagnosisCause: round.roundDiagnosis?.likelyCause || "",
+            currentFeels: round.currentFeels || "",
+            feelId: round.feelId || "",
             singlePlaneMetrics: round.singlePlaneMetrics || initialFormState.singlePlaneMetrics
         });
         setEditModeId(round.id || null);
@@ -138,6 +190,10 @@ export default function LogRoundPage() {
         if (!confirm("Are you sure you want to delete this round? This cannot be undone.")) return;
         
         try {
+            const roundToDelete = history.find(r => r.id === id);
+            if (roundToDelete?.feelId) {
+                await deleteDocument("feels", roundToDelete.feelId);
+            }
             await deleteDocument("rounds", id);
             setHistory(prev => prev.filter(r => r.id !== id));
             if (editModeId === id) {
@@ -203,6 +259,51 @@ export default function LogRoundPage() {
                         </div>
                     </div>
 
+                    {/* Detailed Statistics */}
+                    <div className="border-t border-zinc-800 pt-6">
+                        <h3 className="text-lg font-bold text-zinc-100 mb-4 flex items-center gap-2">
+                            <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002-2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                            Full Game Statistics
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                            <div>
+                                <label className="block text-sm font-semibold text-zinc-300 mb-2">GIR (0-18)</label>
+                                <input type="number" min="0" max="18" placeholder="10" className="block w-full rounded-md border-none bg-zinc-950 py-3 px-4 text-zinc-100 shadow-inner focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow placeholder:text-zinc-600"
+                                    value={formData.gir} onChange={(e) => setFormData({ ...formData, gir: e.target.value })} />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-zinc-300 mb-2">Total Putts</label>
+                                <input type="number" min="0" placeholder="30" className="block w-full rounded-md border-none bg-zinc-950 py-3 px-4 text-zinc-100 shadow-inner focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow placeholder:text-zinc-600"
+                                    value={formData.totalPutts} onChange={(e) => setFormData({ ...formData, totalPutts: e.target.value })} />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-zinc-300 mb-2">Putts per GIR</label>
+                                <input type="number" step="0.1" min="0" placeholder="1.8" className="block w-full rounded-md border-none bg-zinc-950 py-3 px-4 text-zinc-100 shadow-inner focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow placeholder:text-zinc-600"
+                                    value={formData.puttsPerGir} onChange={(e) => setFormData({ ...formData, puttsPerGir: e.target.value })} />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-zinc-300 mb-2">Double Bogeys+</label>
+                                <input type="number" min="0" placeholder="1" className="block w-full rounded-md border-none bg-zinc-950 py-3 px-4 text-zinc-100 shadow-inner focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow placeholder:text-zinc-600"
+                                    value={formData.dbPlus} onChange={(e) => setFormData({ ...formData, dbPlus: parseInt(e.target.value) || 0 })} />
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label className="block text-sm font-semibold text-zinc-300 mb-2">Primary Miss Direction</label>
+                                <select 
+                                    className="block w-full rounded-md border-none bg-zinc-950 py-3 px-4 text-zinc-100 shadow-inner focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow"
+                                    value={formData.primaryMissDirection}
+                                    onChange={(e) => setFormData({ ...formData, primaryMissDirection: e.target.value })}
+                                >
+                                    <option value="None">None / Not Sure</option>
+                                    <option value="Pull Hook">Pull Hook</option>
+                                    <option value="Block Right">Block Right</option>
+                                    <option value="Fat/Chunk">Fat/Chunk</option>
+                                    <option value="Thin/Bladed">Thin/Bladed</option>
+                                    <option value="Slice">Slice</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Round Diagnosis */}
                     <div className="border-t border-zinc-800 pt-6">
                         <h3 className="text-lg font-bold text-zinc-100 mb-4 flex items-center gap-2">
@@ -230,6 +331,16 @@ export default function LogRoundPage() {
                                 <input type="text" placeholder="e.g. Getting stuck inside" className="block w-full rounded-md border-none bg-zinc-900 py-3 px-4 text-zinc-100 shadow-inner focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow placeholder:text-zinc-600"
                                     value={formData.diagnosisCause} onChange={(e) => setFormData({ ...formData, diagnosisCause: e.target.value })} />
                             </div>
+                            <div className="sm:col-span-2 mt-2">
+                                <label className="block text-sm font-medium text-zinc-400 mb-2">Current Feels that are working</label>
+                                <textarea
+                                    rows={3}
+                                    className="block w-full rounded-md border-none bg-zinc-900 py-3 px-4 text-zinc-100 shadow-inner focus:ring-2 focus:ring-indigo-500 sm:text-sm transition-shadow placeholder:text-zinc-600"
+                                    placeholder="Any swing thoughts or feels that were working well today?"
+                                    value={formData.currentFeels}
+                                    onChange={(e) => setFormData({ ...formData, currentFeels: e.target.value })}
+                                />
+                            </div>
                         </div>
                     </div>
 
@@ -238,7 +349,7 @@ export default function LogRoundPage() {
                         <summary className="px-5 py-4 font-bold text-zinc-100 cursor-pointer flex justify-between items-center hover:bg-zinc-900/50 transition-colors">
                             <div className="flex items-center gap-2">
                                 <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-                                Single Plane Progress Tracker
+                                Training Progress Tracker
                             </div>
                             <svg className="w-5 h-5 text-zinc-500 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                         </summary>
@@ -405,6 +516,17 @@ export default function LogRoundPage() {
                                                         </div>
                                                     )}
                                                     
+                                                    {/* Feels */}
+                                                    {round.currentFeels && (
+                                                        <div>
+                                                            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-1 flex items-center gap-2">
+                                                                <svg className="w-3 h-3 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                                                Current Feels
+                                                            </p>
+                                                            <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap bg-indigo-950/20 p-3 rounded-md border border-indigo-900/30">{round.currentFeels}</p>
+                                                        </div>
+                                                    )}
+                                                    
                                                     {/* Attachments */}
                                                     {round.attachments && round.attachments.length > 0 && (
                                                         <div>
@@ -429,6 +551,21 @@ export default function LogRoundPage() {
                                                             <p className="text-sm text-zinc-300 italic">"{round.coachInsight.verdict}"</p>
                                                         </div>
                                                     )}
+
+                                                    {/* Detailed Stats Mini Display */}
+                                                    <div className="mt-4">
+                                                        <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2 flex items-center gap-2">
+                                                            <svg className="w-3 h-3 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002-2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                                            Full Game Stats
+                                                        </p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <span className="text-xs px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">GIR: <span className="text-zinc-200">{round.gir || "-"} / 18</span></span>
+                                                            <span className="text-xs px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">Putts: <span className="text-zinc-200">{round.totalPutts || "-"}</span></span>
+                                                            <span className="text-xs px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">Putts/GIR: <span className="text-zinc-200">{round.puttsPerGir || "-"}</span></span>
+                                                            <span className="text-xs px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">DB+: <span className="text-zinc-200">{round.dbPlus || "0"}</span></span>
+                                                            <span className="text-xs px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">Primary Miss: <span className="text-zinc-200">{round.primaryMissDirection || "-"}</span></span>
+                                                        </div>
+                                                    </div>
 
                                                     {/* Single Plane Tracker Mini Display for History */}
                                                     {round.singlePlaneMetrics && Object.values(round.singlePlaneMetrics).some(v => typeof v === 'number' && v > 0) && (

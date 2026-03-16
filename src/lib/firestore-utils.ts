@@ -25,6 +25,11 @@ export interface Session {
     date: string;
     type: "range" | "practice";
     rawNotes: string;
+    feels?: string;
+    feelId?: string;
+    primaryFocus?: string;
+    sessionRating?: number; // 1-5
+    primaryMissDirection?: string;
     structured?: {
         clubs?: string[];
         misses?: string[];
@@ -61,6 +66,13 @@ export interface Round {
     penaltiesCount: number;
     penaltiesNotes?: string;
     rawNotes?: string;
+    currentFeels?: string;
+    feelId?: string;
+    gir?: number; // 0-18
+    totalPutts?: number;
+    puttsPerGir?: number;
+    primaryMissDirection?: string;
+    dbPlus?: number; // Count of double bogeys or worse
     attachments?: string[];
     coachInsight?: {
         verdict: string;
@@ -123,6 +135,17 @@ export interface Resource {
     date?: string; // YYYY-MM-DD
     addedToNotebookLm?: boolean;
     attachmentUrl?: string;
+    createdAt: Timestamp;
+}
+
+export interface Feel {
+    id?: string;
+    ownerUid: string;
+    date: string;
+    text: string;
+    source: "round" | "session";
+    sourceId?: string;
+    tags?: string[];
     createdAt: Timestamp;
 }
 
